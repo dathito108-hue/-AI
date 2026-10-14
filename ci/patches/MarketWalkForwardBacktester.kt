@@ -19,7 +19,8 @@ data class WalkForwardBacktestReport(
         appendLine("Direction accuracy (relative to each fold origin): " + format(directionalAccuracyPct) + "%.")
         appendLine("Actual closes inside the model p10–p90 interval: " + format(p10p90CoveragePct) + "%.")
         appendLine(
-            "Preliminary screen: " + if (passesPreliminaryGate) "PASS" else "FAIL — NO TRADE VETO" +
+            "Preliminary screen: " +
+                (if (passesPreliminaryGate) "PASS" else "FAIL — NO-TRADE veto applies") +
                 ". Gate requires lower MAE than persistence, direction accuracy above 50%, and p10–p90 coverage in 50–98%."
         )
         append("Important: this short recent holdout is only a sanity check, not evidence of profitability or a replacement for longer walk-forward, fee/slippage-aware backtests.")
