@@ -184,10 +184,10 @@ realtime_section = """        item {
             }
         }
 """
-section_anchor = 'council_section = """        item {\n            SectionTitle("Hội đồng AI tìm cơ hội thị trường",'
+section_anchor = '        item {\n            SectionTitle("Hội đồng AI tìm cơ hội thị trường",'
 if source.count(section_anchor) != 1:
     raise SystemExit("Could not uniquely find council section to insert realtime UI")
-source = source.replace(section_anchor, realtime_section + '\ncouncil_section = """        item {\n            SectionTitle("Hội đồng AI tìm cơ hội thị trường",', 1)
+source = source.replace(section_anchor, realtime_section + section_anchor, 1)
 
 activity_path.write_text(source)
 print("Integrated realtime market streams, AUTO discovery, Twelve Data market routing and the autonomous scanner UI.")
