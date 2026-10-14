@@ -462,6 +462,8 @@ object AutonomousMarketScanner {
                     try {
                         onStatus("(" + (index + 1) + "/" + selected.size + ") Đang tải 6.048 nến M15 hoàn chỉnh: " + target.symbol)
                         val bars = MarketRealtimeDataSource.loadHistory(target, twelveDataApiKey)
+                        MarketOpportunityJournal.evaluateMatured(context, target.symbol, bars)
+                        val priorResearch = MarketOpportunityJournal.recentFeedback(context, target.symbol, 24)
                         onStatus("Đang chạy Chronos-2, kiểm định ngoài mẫu và hội đồng AI: " + target.symbol)
                         val costBps = if (target.feed == MarketFeed.BINANCE_SPOT) 20.0 else 30.0
                         val report = TradingCouncilEngine.run(
@@ -470,6 +472,7 @@ object AutonomousMarketScanner {
                             candles = bars,
                             roundTripCostBps = costBps,
                             newsText = "",
+                            priorResearchContext = priorResearch,
                             onProgress = onProgress
                         )
                         MarketOpportunityJournal.append(context, target, report)
@@ -493,41 +496,179 @@ object AutonomousMarketScanner {
 
 object MarketOpportunityJournal {
     private const val NAME = "market-opportunity-journal.jsonl"
-    private const val MAX_BYTES = 4L * 1024L * 1024L
+    private const val MAX_BYTES = 16L * 1024L * 1024L
+    private const val KEEP_LINES = 15000
     private val lock = Any()
 
     fun append(context: Context, target: AutonomousMarketTarget, report: TradingCouncilReport) {
         val file = File(context.filesDir, NAME)
         synchronized(lock) {
             runCatching {
+                val horizons = JSONArray()
+                report.forecast.horizons.forEach { h ->
+                    horizons.put(JSONObject()
+                        .put("steps", h.steps15m)
+                        .put("median", h.medianPrice)
+                        .put("p10", h.p10Price)
+                        .put("p90", h.p90Price))
+                }
+                val id = target.symbol + "|" + report.forecast.originBarTimestampEpochSeconds + "|" +
+                    report.forecast.forecastGeneratedAtEpochSeconds
                 val line = JSONObject()
+                    .put("kind", "forecast")
+                    .put("forecast_id", id)
                     .put("recorded_at_epoch_seconds", Instant.now().epochSecond)
-                    .put("symbol", target.symbol)
+                    .put("symbol", target.symbol.uppercase(Locale.ROOT))
                     .put("feed", target.feed.name)
-                    .put("price_at_discovery", report.forecast.lastClose)
+                    .put("origin_bar_epoch_seconds", report.forecast.originBarTimestampEpochSeconds)
+                    .put("forecast_generated_at_epoch_seconds", report.forecast.forecastGeneratedAtEpochSeconds)
+                    .put("price_at_origin", report.forecast.lastClose)
                     .put("forecast_model", report.forecast.modelName)
                     .put("forecast_revision", report.forecast.modelRevision)
+                    .put("horizons", horizons)
+                    .put("backtest_pass", report.backtest.passesPreliminaryGate)
                     .put("backtest", report.backtest.compactSummary())
-                    .put("final_decision", report.finalDecision.take(10_000))
-                    .put("report", report.toDisplayText().take(18_000)).toString()
+                    .put("final_decision", report.finalDecision.take(2200))
+                    .toString()
                 FileOutputStream(file, true).use { it.write((line + "\n").toByteArray(Charsets.UTF_8)) }
-                if (file.length() > MAX_BYTES) {
-                    val keep = file.readLines(Charsets.UTF_8).takeLast(100)
-                    file.writeText(keep.joinToString("\n", postfix = "\n"), Charsets.UTF_8)
-                }
+                trimIfNeeded(file)
             }
         }
     }
 
-    fun recent(context: Context, count: Int = 8): String {
+    /**
+     * Score forecasts only after the stated horizon has matured in subsequently observed candles.
+     * This evaluates price forecasts, not hypothetical or realised trade P&L.
+     */
+    fun evaluateMatured(
+        context: Context,
+        symbol: String,
+        candles: List<MarketCandle15m>
+    ): Int = synchronized(lock) {
         val file = File(context.filesDir, NAME)
-        if (!file.isFile) return "Chưa có nhật ký nghiên cứu trước đó."
-        return runCatching {
-            file.readLines(Charsets.UTF_8).takeLast(count.coerceIn(1, 30)).joinToString("\n") { line ->
-                val item = JSONObject(line)
-                item.optString("symbol") + " @" + item.optLong("recorded_at_epoch_seconds") +
-                    ": " + item.optString("backtest") + " | " + item.optString("final_decision").take(450)
+        if (!file.isFile || candles.size < 2) return@synchronized 0
+        val lines = runCatching { file.readLines(Charsets.UTF_8) }.getOrElse { return@synchronized 0 }
+        val targetSymbol = symbol.uppercase(Locale.ROOT)
+        val existingKeys = HashSet<String>()
+        val forecasts = ArrayList<JSONObject>()
+        for (line in lines) {
+            val item = runCatching { JSONObject(line) }.getOrNull() ?: continue
+            if (item.optString("kind") == "evaluation") existingKeys.add(item.optString("evaluation_key"))
+            if (item.optString("kind") == "forecast" && item.optString("symbol").uppercase(Locale.ROOT) == targetSymbol) {
+                forecasts.add(item)
             }
+        }
+        val indexByTimestamp = HashMap<Long, Int>(candles.size)
+        candles.forEachIndexed { index, candle -> indexByTimestamp[candle.timestampEpochSeconds] = index }
+        val newRecords = ArrayList<String>()
+        for (forecast in forecasts) {
+            val id = forecast.optString("forecast_id")
+            val origin = forecast.optLong("origin_bar_epoch_seconds", -1L)
+            val originIndex = indexByTimestamp[origin] ?: continue
+            val baseline = forecast.optDouble("price_at_origin", Double.NaN)
+            if (!baseline.isFinite() || baseline <= 0.0) continue
+            val horizons = forecast.optJSONArray("horizons") ?: continue
+            for (h in 0 until horizons.length()) {
+                val predicted = horizons.optJSONObject(h) ?: continue
+                val steps = predicted.optInt("steps", 0)
+                if (steps <= 0) continue
+                val evaluationKey = id + "|" + steps
+                if (evaluationKey in existingKeys) continue
+                val actualIndex = originIndex + steps
+                if (actualIndex >= candles.size) continue
+                val actual = candles[actualIndex].close
+                val median = predicted.optDouble("median", Double.NaN)
+                val p10 = predicted.optDouble("p10", Double.NaN)
+                val p90 = predicted.optDouble("p90", Double.NaN)
+                if (!actual.isFinite() || actual <= 0 || !median.isFinite() || !p10.isFinite() || !p90.isFinite()) continue
+                val predReturn = (median / baseline - 1.0) * 100.0
+                val actualReturn = (actual / baseline - 1.0) * 100.0
+                val directionValid = abs(actualReturn) >= 0.001
+                val directionHit = directionValid && ((predReturn >= 0.0) == (actualReturn >= 0.0))
+                val record = JSONObject()
+                    .put("kind", "evaluation")
+                    .put("evaluation_key", evaluationKey)
+                    .put("forecast_id", id)
+                    .put("recorded_at_epoch_seconds", Instant.now().epochSecond)
+                    .put("symbol", targetSymbol)
+                    .put("feed", forecast.optString("feed"))
+                    .put("origin_bar_epoch_seconds", origin)
+                    .put("target_bar_epoch_seconds", candles[actualIndex].timestampEpochSeconds)
+                    .put("steps", steps)
+                    .put("model", forecast.optString("forecast_model"))
+                    .put("baseline_price", baseline)
+                    .put("predicted_median_price", median)
+                    .put("actual_close", actual)
+                    .put("predicted_return_pct", predReturn)
+                    .put("actual_return_pct", actualReturn)
+                    .put("absolute_error_pct", abs(median - actual) / actual * 100.0)
+                    .put("direction_valid", directionValid)
+                    .put("direction_hit", directionHit)
+                    .put("interval_covered", p10 <= actual && actual <= p90)
+                    .toString()
+                newRecords.add(record)
+                existingKeys.add(evaluationKey)
+            }
+        }
+        if (newRecords.isNotEmpty()) {
+            runCatching {
+                FileOutputStream(file, true).use { output ->
+                    newRecords.forEach { output.write((it + "\n").toByteArray(Charsets.UTF_8)) }
+                }
+                trimIfNeeded(file)
+            }
+        }
+        newRecords.size
+    }
+
+    fun recentFeedback(context: Context, symbol: String, count: Int = 24): String = synchronized(lock) {
+        val file = File(context.filesDir, NAME)
+        if (!file.isFile) return@synchronized "Chưa có đánh giá dự báo đã trưởng thành."
+        val target = symbol.uppercase(Locale.ROOT)
+        val records = runCatching { file.readLines(Charsets.UTF_8) }.getOrElse {
+            return@synchronized "Không đọc được nhật ký kết quả cũ; không được giả định kết quả."
+        }.mapNotNull { line -> runCatching { JSONObject(line) }.getOrNull() }
+            .filter { it.optString("kind") == "evaluation" && it.optString("symbol").uppercase(Locale.ROOT) == target }
+            .takeLast(count.coerceIn(1, 100))
+        if (records.isEmpty()) {
+            return@synchronized "Chưa có dự báo đủ thời gian để chấm điểm ngoài mẫu cho " + target +
+                ". Chỉ được xem dự báo mới là giả thuyết, chưa có bằng chứng hiệu quả."
+        }
+        buildString {
+            appendLine("Matured price-forecast outcomes for " + target + " (not realised strategy P&L):")
+            for (steps in listOf(4, 16, 96, 672)) {
+                val group = records.filter { it.optInt("steps") == steps }
+                if (group.isEmpty()) continue
+                val mae = group.map { it.optDouble("absolute_error_pct", Double.NaN) }.filter { it.isFinite() }.average()
+                val validDirections = group.filter { it.optBoolean("direction_valid") }
+                val direction = if (validDirections.isEmpty()) Double.NaN else
+                    validDirections.count { it.optBoolean("direction_hit") } * 100.0 / validDirections.size
+                val coverage = group.count { it.optBoolean("interval_covered") } * 100.0 / group.size
+                appendLine("H=" + steps + " bars: samples=" + group.size +
+                    ", MAE=" + String.format(Locale.US, "%.3f", mae) + "%, direction hit=" +
+                    (if (direction.isFinite()) String.format(Locale.US, "%.1f", direction) + "%" else "n/a") +
+                    ", p10-p90 coverage=" + String.format(Locale.US, "%.1f", coverage) + "%.")
+            }
+            append("Use mature outcomes to revise testable strategy hypotheses; do not infer profitability without fee/slippage-aware trading backtests.")
+        }
+    }
+
+    fun recent(context: Context, count: Int = 8): String = synchronized(lock) {
+        val file = File(context.filesDir, NAME)
+        if (!file.isFile) return@synchronized "Chưa có nhật ký nghiên cứu trước đó."
+        runCatching {
+            file.readLines(Charsets.UTF_8).mapNotNull { runCatching { JSONObject(it) }.getOrNull() }
+                .filter { it.optString("kind") == "forecast" }.takeLast(count.coerceIn(1, 30))
+                .joinToString("\n") { item ->
+                    item.optString("symbol") + " @" + item.optLong("recorded_at_epoch_seconds") +
+                        ": " + item.optString("backtest") + " | " + item.optString("final_decision").take(350)
+                }
         }.getOrDefault("Không thể đọc nhật ký nghiên cứu.")
+    }
+
+    private fun trimIfNeeded(file: File) {
+        if (file.length() <= MAX_BYTES) return
+        val keep = runCatching { file.readLines(Charsets.UTF_8).takeLast(KEEP_LINES) }.getOrDefault(emptyList())
+        file.writeText(keep.joinToString("\n", postfix = "\n"), Charsets.UTF_8)
     }
 }
