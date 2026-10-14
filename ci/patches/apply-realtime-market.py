@@ -7,6 +7,10 @@ market_target = android_root / "ai" / "MarketRealtimeDataSource.kt"
 market_target.parent.mkdir(parents=True, exist_ok=True)
 market_target.write_text(market_source.read_text())
 
+research_source = Path("ci/patches/CryptoEcosystemResearch.kt")
+research_target = android_root / "ai" / "CryptoEcosystemResearch.kt"
+research_target.write_text(research_source.read_text())
+
 # Keep the WebSocket dependency deterministic in CI and avoid duplicate declarations.
 gradle_file = Path("MultiAITradingAndroid/app/build.gradle.kts")
 gradle_text = gradle_file.read_text()
