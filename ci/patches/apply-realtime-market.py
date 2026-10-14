@@ -170,7 +170,7 @@ realtime_section = """        item {
                         }
                     }
                     if (autonomousReportText.isNotBlank()) {
-                        Divider(color = Border)
+                        Spacer(Modifier.height(4.dp))
                         Text("Biên bản hội đồng gần nhất", color = Mint, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         Text(autonomousReportText, color = Color.White, fontSize = 11.sp, lineHeight = 16.sp)
                     }
