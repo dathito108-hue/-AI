@@ -60,8 +60,8 @@ data class MarketForecast(
     val observations: Int,
     val lastClose: Double,
     val forecastGeneratedAtEpochSeconds: Long,
-    val horizons: List<ForecastHorizon>
-    val predictionPath: List<ForecastPathPoint>
+    val horizons: List<ForecastHorizon>,
+    val predictionPath: List<ForecastPathPoint>,
     val quantileCrossings: Int
 ) {
     fun compactSummary(): String = buildString {
