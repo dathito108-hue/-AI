@@ -293,7 +293,7 @@ object MarketRealtimeDataSource : Closeable {
         if (endDate != null) builder.addQueryParameter("end_date", endDate)
         val request = Request.Builder().url(builder.build()).header("Authorization", "apikey " + apiKey)
             .header("User-Agent", "MultiAITradingCouncil-Android/0.4").get().build()
-        http.newCall(request).execute().use { response ->
+        return http.newCall(request).execute().use { response ->
             val body = response.body?.string() ?: error("Twelve Data phản hồi rỗng.")
             require(response.isSuccessful) { "Twelve Data HTTP " + response.code + "; kiểm tra hạn mức và quyền mã." }
             val json = JSONObject(body)
