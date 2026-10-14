@@ -179,6 +179,7 @@ object TradingCouncilEngine {
         candles: List<MarketCandle15m>,
         roundTripCostBps: Double,
         newsText: String,
+        priorResearchContext: String = "",
         onProgress: (String, Int) -> Unit = { _, _ -> }
     ): TradingCouncilReport {
         require(instrument.isNotBlank()) { "Specify an instrument such as XAUUSD, EURUSD, BTCUSDT or SPY." }
@@ -196,9 +197,14 @@ object TradingCouncilEngine {
         val backtest = MarketWalkForwardBacktester.run(context, instrument, candles) { stage, progress ->
             onProgress(stage, progress)
         }
+        val priorResearch = priorResearchContext.trim().takeLast(7000).ifBlank {
+            "No matured, symbol-specific forecast outcome history is available yet. Do not invent it."
+        }
         val marketBrief = buildMarketBrief(forecast, roundTripCostBps) +
             "\n\nWALK-FORWARD SCREEN (preliminary, not a profitability proof):\n" +
-            backtest.compactSummary()
+            backtest.compactSummary() +
+            "\n\nPRIOR LIVE FORECAST OUTCOMES (historical evidence, not realised trading P&L):\n" +
+            priorResearch
 
         onProgress("Prepare coordinator model", 0)
         val coordinator = ModelRepository.modelFile(context, ModelRole.COORDINATOR)?.takeIf { it.isFile }
