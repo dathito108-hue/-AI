@@ -29,7 +29,7 @@ The **Hội đồng AI tìm cơ hội thị trường** section adds a real ONNX
 ### Forecast I/O contract
 
 - Source currently supported by the in-app council: **user-imported CSV**, not a live broker or exchange feed.
-- CSV needs headers `timestamp,open,high,low,close,volume` and at least 5,760 contiguous 15-minute bars. The app rejects missing/non-15-minute intervals instead of synthesizing candles.
+- CSV needs headers `timestamp,open,high,low,close,volume` and at least 5,760 chronologically ordered 15-minute bars. The parser allows session/weekend closures up to 72 hours, rejects irregular gaps, and never synthesizes missing candles. Forecast horizons refer to bar counts; around market closures they are not guaranteed wall-clock durations.
 - Tensor inputs to Chronos-2: `context` float32 `[4,5760]` with log(close), log(high), log(low), log(1+volume); `group_ids` `[4]`; `attention_mask` `[4,5760]`; and future-covariate values/mask `[4,672]`.
 - Output `quantile_preds` is interpreted as 21 quantiles over 672 future 15-minute steps for each input series. The close-series p10/p50/p90 is converted from log-price back to price and reported at 1h, 4h, 1d and 7d horizons.
 - The checkpoint is a **general pretrained time-series model**, not a model fine-tuned or validated on a financial asset. Forecast quantiles are not calibrated probabilities of profit; backtesting and market-specific fine-tuning are still required.
