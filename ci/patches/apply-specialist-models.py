@@ -239,7 +239,7 @@ council_section = """        item {
                         },
                         enabled = !isBusy && marketSymbol.isNotBlank() &&
                             roundTripCostText.toDoubleOrNull() != null &&
-                            (roundTripCostText.toDoubleOrNull() ?: -1.0) >= 0.0 && marketBarsCount >= 5760,
+                            (roundTripCostText.toDoubleOrNull() ?: -1.0) >= 0.0 && marketBarsCount >= com.localtrading.council.ai.MarketWalkForwardBacktester.MINIMUM_BARS,
                         modifier = Modifier.fillMaxWidth()
                     ) { Text(if (isBusy) "Đang chạy hội đồng AI…" else "Chạy hội đồng AI trên thị trường này") }
                     Text(
