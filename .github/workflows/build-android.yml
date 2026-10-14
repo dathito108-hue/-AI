@@ -106,6 +106,9 @@ jobs:
           patch --batch --forward -p1 < ci/patches/main-activity-model-screen.patch
           grep -q 'downloadRecommendedCoordinator' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/data/ModelRepository.kt
           grep -q 'Mô hình có thể cài' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/MainActivity.kt
+          python3 ci/patches/apply-specialist-models.py
+          grep -q 'SpecialistModelRepository' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/data/SpecialistModelRepository.kt
+          grep -q 'AI chuyên môn có trọng số thật' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/MainActivity.kt
 
       - name: Build and test
         shell: bash
