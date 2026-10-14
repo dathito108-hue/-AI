@@ -147,7 +147,7 @@ activation_callback = """                        onActivateSpecialist = { modelI
                                     toastText = "Hội đồng AI đã hoàn tất phân tích nghiên cứu."
                                 } catch (e: Exception) {
                                     councilReportText = "Hội đồng chưa thể kết luận: " + (e.message ?: "lỗi mô hình/dữ liệu") +
-                                        "\nKhông có giao dịch nào được thực hiện."
+                                        "\\nKhông có giao dịch nào được thực hiện."
                                     toastText = "Phân tích chưa hoàn tất."
                                 } finally {
                                     isBusy = false
