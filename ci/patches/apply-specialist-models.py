@@ -30,7 +30,7 @@ state_new = state_anchor + (
     "    var roundTripCostText by remember { mutableStateOf(\"10\") }\n"
     "    var marketNewsText by remember { mutableStateOf(\"\") }\n"
     "    var marketBars by remember { mutableStateOf<List<com.localtrading.council.ai.MarketCandle15m>>(emptyList()) }\n"
-    "    var marketCsvStatus by remember { mutableStateOf(\"Chưa có dữ liệu. Hãy chọn CSV OHLCV M15 gồm 5.760 nến liên tục.\") }\n"
+    "    var marketCsvStatus by remember { mutableStateOf(\"Chưa có dữ liệu. Hãy chọn CSV OHLCV M15 gồm 5.760 nến.\") }\n"
     "    var councilReportText by remember { mutableStateOf(\"\") }\n"
     "    var councilProgressText by remember { mutableStateOf(\"\") }\n"
     "    var councilProgress by remember { mutableStateOf<Int?>(null) }\n"
@@ -217,7 +217,7 @@ council_section = """        item {
                         enabled = !isBusy
                     )
                     Text(
-                        "Nguồn giá hiện tại: CSV do bạn cung cấp. Cần 5.760 nến M15 liên tục (60 ngày giao dịch crypto tương đương; không chèn nến giả). Header: timestamp,open,high,low,close,volume.",
+                        "Nguồn giá hiện tại: CSV do bạn cung cấp. Cần 5.760 nến M15 theo thứ tự thời gian; cho phép nghỉ phiên/cuối tuần, không chèn nến giả. Header: timestamp,open,high,low,close,volume.",
                         color = SoftText, fontSize = 11.sp, lineHeight = 16.sp
                     )
                     Text(marketCsvStatus, color = if (marketBarsCount >= 5760) Mint else Amber, fontSize = 11.sp)
