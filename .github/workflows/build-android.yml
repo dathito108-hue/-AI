@@ -68,24 +68,34 @@ jobs:
           test -f MultiAITradingAndroid/app/build.gradle.kts
           chmod +x MultiAITradingAndroid/gradlew
 
-      - name: Use the project-pinned Gradle version
+      - name: Apply build fixes and pin Gradle version
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          p = Path("MultiAITradingAndroid/gradlew")
-          s = p.read_text()
+
+          wrapper = Path("MultiAITradingAndroid/gradlew")
+          s = wrapper.read_text()
           bypass = 'if command -v gradle >/dev/null 2>&1; then\n  exec "$(command -v gradle)" "$@"\nfi\n'
           if bypass in s:
               s = s.replace(bypass, "", 1)
-              p.write_text(s)
-          if 'VERSION="8.13"' not in s:
-              raise SystemExit("Expected Gradle 8.13 bootstrap wrapper not found")
-          if 'exec "$(command -v gradle)"' in s:
-              raise SystemExit("System Gradle bypass still present")
+          if 'VERSION="8.13"' not in s or 'exec "$(command -v gradle)"' in s:
+              raise SystemExit("Gradle 8.13 bootstrap wrapper check failed")
+          wrapper.write_text(s)
+
+          p = Path("MultiAITradingAndroid/app/src/main/java/com/localtrading/council/ai/OnnxForecastRuntime.kt")
+          source = p.read_text()
+          old = '    private fun run(modelPath: String, data: FloatArray, desiredShape: LongArray, expectedRank: Int): FloatArray {\n        sessionFor(modelPath).let { session ->'
+          new = '    private fun run(modelPath: String, data: FloatArray, desiredShape: LongArray, expectedRank: Int): FloatArray {\n        return sessionFor(modelPath).let { session ->'
+          if old in source:
+              source = source.replace(old, new, 1)
+          elif new not in source:
+              raise SystemExit("Could not locate OnnxForecastRuntime.run return fix")
+          p.write_text(source)
           PY
           grep 'VERSION=' MultiAITradingAndroid/gradlew
+          grep -A1 'private fun run(modelPath' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/ai/OnnxForecastRuntime.kt
 
       - name: Build and test
         shell: bash
