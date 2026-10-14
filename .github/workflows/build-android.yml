@@ -68,6 +68,25 @@ jobs:
           test -f MultiAITradingAndroid/app/build.gradle.kts
           chmod +x MultiAITradingAndroid/gradlew
 
+      - name: Use the project-pinned Gradle version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("MultiAITradingAndroid/gradlew")
+          s = p.read_text()
+          bypass = 'if command -v gradle >/dev/null 2>&1; then\n  exec "$(command -v gradle)" "$@"\nfi\n'
+          if bypass in s:
+              s = s.replace(bypass, "", 1)
+              p.write_text(s)
+          if 'VERSION="8.13"' not in s:
+              raise SystemExit("Expected Gradle 8.13 bootstrap wrapper not found")
+          if 'exec "$(command -v gradle)"' in s:
+              raise SystemExit("System Gradle bypass still present")
+          PY
+          grep 'VERSION=' MultiAITradingAndroid/gradlew
+
       - name: Build and test
         shell: bash
         run: |
