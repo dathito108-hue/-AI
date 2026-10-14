@@ -62,6 +62,7 @@ data class MarketForecast(
     val forecastGeneratedAtEpochSeconds: Long,
     val horizons: List<ForecastHorizon>
     val predictionPath: List<ForecastPathPoint>
+    val quantileCrossings: Int
 ) {
     fun compactSummary(): String = buildString {
         appendLine("Model: " + modelName + " (" + modelRevision + "), general pretrained time-series foundation model.")
@@ -79,6 +80,7 @@ data class MarketForecast(
                     String.format(Locale.US, "%+.3f", p90Pct) + "%."
             )
         }
+        appendLine("Non-monotonic p10/p50/p90 steps reordered by monotone sorting: " + quantileCrossings + ".")
         append("Quantiles are model estimates, not calibrated probabilities of profit. No trade was placed.")
     }
 }
@@ -322,14 +324,18 @@ object Chronos2MarketForecaster {
                 }
                 return exp(value.toDouble())
             }
+            var quantileCrossings = 0
             val path = (1..HORIZON).map { step ->
-                val p10 = priceAt(2, step)
-                val p50 = priceAt(10, step)
-                val p90 = priceAt(18, step)
-                require(p10 > 0.0 && p50 > 0.0 && p90 > 0.0 && p10 <= p50 && p50 <= p90) {
+                val p10Raw = priceAt(2, step)
+                val p50Raw = priceAt(10, step)
+                val p90Raw = priceAt(18, step)
+                require(p10Raw > 0.0 && p50Raw > 0.0 && p90Raw > 0.0) {
                     "Chronos-2 quantiles are invalid at step " + step + "; reject the forecast."
                 }
-                ForecastPathPoint(step, p50, p10, p90)
+                if (!(p10Raw <= p50Raw && p50Raw <= p90Raw)) quantileCrossings++
+                // Monotone rearrangement avoids returning an inverted interval if the raw model crosses quantiles.
+                val ordered = listOf(p10Raw, p50Raw, p90Raw).sorted()
+                ForecastPathPoint(step, ordered[1], ordered[0], ordered[2])
             }
             fun horizon(steps: Int): ForecastHorizon {
                 val p = path[steps - 1]
@@ -344,7 +350,8 @@ object Chronos2MarketForecaster {
                 lastClose = lastClose,
                 forecastGeneratedAtEpochSeconds = Instant.now().epochSecond,
                 horizons = listOf(horizon(4), horizon(16), horizon(96), horizon(672)),
-                predictionPath = path
+                predictionPath = path,
+                quantileCrossings = quantileCrossings
             )
         } finally {
             output?.close()
