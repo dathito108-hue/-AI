@@ -175,7 +175,7 @@ object Chronos2ModelRepository {
     const val MODEL_REVISION = "d3aa45b0acbedadf69d241954ed1b21167937bae"
     private const val SIZE = 130_818_337L
     private const val SHA256 = "5a4b21df79238050b3815c4bda7e580ff254d1c755f7c5bad9eb11ac91920115"
-    private const val URL =
+    private const val MODEL_URL =
         "https://huggingface.co/OpenSTEF/chronos-2-onnx/resolve/d3aa45b0acbedadf69d241954ed1b21167937bae/chronos-2_int8.onnx"
     suspend fun ensureInstalled(context: Context, onProgress: (Int) -> Unit = {}): File =
         withContext(Dispatchers.IO) {
@@ -194,7 +194,7 @@ object Chronos2ModelRepository {
             }
             var conn: HttpURLConnection? = null
             try {
-                val request = (URL(URL).openConnection() as HttpURLConnection).apply {
+                val request = (URL(MODEL_URL).openConnection() as HttpURLConnection).apply {
                     connectTimeout = 25_000; readTimeout = 90_000; instanceFollowRedirects = true
                     requestMethod = "GET"
                     setRequestProperty("User-Agent", "MultiAI-Trading-Council-Android/0.3")
