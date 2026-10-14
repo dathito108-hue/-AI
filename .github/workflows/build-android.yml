@@ -62,7 +62,8 @@ jobs:
           set -euo pipefail
           cat ci/source-bundle/source-*.b64 | tr -d '\n' | base64 --decode > /tmp/multi-ai-trading-source.tar.gz
           gzip -t /tmp/multi-ai-trading-source.tar.gz
-          tar -tzf /tmp/multi-ai-trading-source.tar.gz | head -40
+          tar -tzf /tmp/multi-ai-trading-source.tar.gz > /tmp/multi-ai-trading-source-files.txt
+          head -40 /tmp/multi-ai-trading-source-files.txt
           tar -xzf /tmp/multi-ai-trading-source.tar.gz -C .
           test -f MultiAITradingAndroid/app/build.gradle.kts
           chmod +x MultiAITradingAndroid/gradlew
