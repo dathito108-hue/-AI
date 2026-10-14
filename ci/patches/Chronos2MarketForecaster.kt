@@ -84,6 +84,8 @@ data class MarketForecast(
 object MarketCsvParser {
     private val formats = listOf(
         DateTimeFormatter.ISO_OFFSET_DATE_TIME,
+        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"),
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"),
         DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss"),
@@ -298,7 +300,7 @@ object Chronos2MarketForecaster {
             output = session.run(inputs)
             val outputName = if (session.outputInfo.containsKey("quantile_preds")) "quantile_preds"
                 else session.outputInfo.keys.firstOrNull() ?: error("Chronos-2 produced no outputs.")
-            val tensor = output.get(outputName).orElseThrow() as? OnnxTensor
+            val tensor = output.get(outputName).get() as? OnnxTensor
                 ?: error("Chronos-2 output is not a tensor.")
             require(tensor.info.type == OnnxJavaType.FLOAT) { "Expected float32 quantile output, got " + tensor.info.type }
             val fb = tensor.floatBuffer
