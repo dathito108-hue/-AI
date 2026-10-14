@@ -296,7 +296,7 @@ object TradingCouncilEngine {
             append(synthesis)
         }
         onProgress("Council completed", 100)
-        TradingCouncilReport(forecast, backtest, roundTripCostBps, stages, finalDecision)
+        return TradingCouncilReport(forecast, backtest, roundTripCostBps, stages, finalDecision)
     }
 
     private fun buildMarketBrief(f: MarketForecast, costBps: Double): String = buildString {
