@@ -463,7 +463,11 @@ object AutonomousMarketScanner {
                         onStatus("(" + (index + 1) + "/" + selected.size + ") Đang tải 6.048 nến M15 hoàn chỉnh: " + target.symbol)
                         val bars = MarketRealtimeDataSource.loadHistory(target, twelveDataApiKey)
                         MarketOpportunityJournal.evaluateMatured(context, target.symbol, bars)
-                        val priorResearch = MarketOpportunityJournal.recentFeedback(context, target.symbol, 24)
+                        val forecastFeedback = MarketOpportunityJournal.recentFeedback(context, target.symbol, 24)
+                        onStatus("Đang thu thập dữ liệu DEX, DeFi, airdrop, NFT và RWA cho hội đồng AI…")
+                        val ecosystemBrief = runCatching { CryptoEcosystemResearch.fetchSnapshot() }
+                            .getOrElse { "Crypto ecosystem feeds unavailable this cycle: " + (it.message ?: it.javaClass.simpleName) }
+                        val priorResearch = forecastFeedback + "\n\nCRYPTO ECOSYSTEM RESEARCH:\n" + ecosystemBrief
                         onStatus("Đang chạy Chronos-2, kiểm định ngoài mẫu và hội đồng AI: " + target.symbol)
                         val costBps = if (target.feed == MarketFeed.BINANCE_SPOT) 20.0 else 30.0
                         val report = TradingCouncilEngine.run(
@@ -471,7 +475,7 @@ object AutonomousMarketScanner {
                             instrument = target.symbol,
                             candles = bars,
                             roundTripCostBps = costBps,
-                            newsText = "",
+                            newsText = ecosystemBrief,
                             priorResearchContext = priorResearch,
                             onProgress = onProgress
                         )
