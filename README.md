@@ -28,11 +28,23 @@ The **Hội đồng AI tìm cơ hội thị trường** section adds a real ONNX
 
 ### Forecast I/O contract
 
-- Source currently supported by the in-app council: **user-imported CSV**, not a live broker or exchange feed.
+- **Realtime automatic mode:** public Binance Spot REST + combined WebSocket streams. The app discovers liquid USDT spot pairs, listens to mini-ticker updates, and downloads closed M15 candles itself; no CSV or API key is needed for this crypto path. It does not use a private Binance account or place orders.
+- **Specified FX/metals/stocks:** routed through Twelve Data REST + WebSocket when a user enters their own API key. Data access, real-time entitlement, supported symbols, history and quota depend on the provider plan. The key remains in UI session memory and is not written to the opportunity journal.
+- CSV import remains available as a separate manual research path.
 - CSV needs headers `timestamp,open,high,low,close,volume` and at least 6,048 chronologically ordered 15-minute bars for the council run. The parser allows session/weekend closures up to 72 hours, rejects irregular gaps, and never synthesizes missing candles. The model uses the latest 5,760 bars as input; the earlier/later holdout structure is kept for a recent rolling-origin screen. Forecast horizons refer to bar counts; around market closures they are not guaranteed wall-clock durations.
 - Tensor inputs to Chronos-2: `context` float32 `[4,5760]` with log(close), log(high), log(low), log(1+volume); `group_ids` `[4]`; `attention_mask` `[4,5760]`; and future-covariate values/mask `[4,672]`.
 - Output `quantile_preds` is interpreted as 21 quantiles over 672 future 15-minute steps for each input series. The close-series p10/p50/p90 is converted from log-price back to price and reported at 1h, 4h, 1d and 7d horizons.
 - The checkpoint is a **general pretrained time-series model**, not a model fine-tuned or validated on a financial asset. Forecast quantiles are not calibrated probabilities of profit; backtesting and market-specific fine-tuning are still required.
+
+### Automatic discovery and live feedback loop
+
+- Leave the market scope as `AUTO` to discover liquid, active Binance USDT spot markets. Enter one or several symbols to constrain the scanner, e.g. `BTCUSDT` or `XAU/USD,EUR/USD`.
+- The feed is real-time WebSocket price data. The AI re-analysis cycle runs about every 15 minutes using completed M15 candles, not every individual price tick, to avoid treating an unfinished candle as final.
+- In AUTO mode the app prescreens a larger universe by 24-hour liquidity/activity and sends at most three candidates per cycle to the heavier local AI council. Prescreen score is only a compute-budget filter, not a trading signal.
+- Each symbol requires 6,048 bars: 5,760 input bars plus three 96-bar rolling-origin holdout windows. The app downloads history itself; the user no longer has to upload CSV.
+- A private local journal records each forecast and scores it later when the 1h, 4h, 1d and 7d candle horizons mature. The next council receives this matured forecast-error, direction-hit and p10–p90-coverage evidence. This is closed-loop research memory; it does **not** update model weights online or prove that a strategy earned money.
+- Public Binance streams are documented at [Binance market-data-only endpoints](https://github.com/binance/binance-spot-api-docs/blob/master/faqs/market_data_only.md) and [WebSocket market streams](https://github.com/binance/binance-spot-api-docs/blob/master/web-socket-streams.md). The official docs note public endpoints require no key and publish ticker/price streams.
+- Twelve Data requires an API key. Its [current individual Basic plan](https://twelvedata.com/pricing) has finite API credits and limited trial WebSocket symbol credits; provider permissions/coverage vary by market. Check that the chosen plan permits your use case and symbols before relying on it.
 
 ### Council debate flow
 
