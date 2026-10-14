@@ -133,8 +133,8 @@ object MarketCsvParser {
         val window = sorted.takeLast(CONTEXT)
         for (i in 1 until window.size) {
             val gap = window[i].timestampEpochSeconds - window[i - 1].timestampEpochSeconds
-            require(gap == 900L) {
-                "CSV has a gap or non-M15 interval (" + gap + " seconds). Do not fill missing candles with synthetic prices."
+            require(gap >= 900L && gap % 900L == 0L && gap <= 72L * 60L * 60L) {
+                "CSV has an invalid or unexplained time gap (" + gap + " seconds). Keep bars ordered and do not fabricate missing candles."
             }
         }
         return window
