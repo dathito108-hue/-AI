@@ -6,7 +6,7 @@ repository_target = root / "data" / "SpecialistModelRepository.kt"
 repository_target.parent.mkdir(parents=True, exist_ok=True)
 repository_target.write_text(repository_source.read_text())
 
-for filename in ("Chronos2MarketForecaster.kt", "TradingCouncilEngine.kt"):
+for filename in ("Chronos2MarketForecaster.kt", "MarketWalkForwardBacktester.kt", "TradingCouncilEngine.kt"):
     source_file = Path("ci/patches") / filename
     target_file = root / "ai" / filename
     target_file.parent.mkdir(parents=True, exist_ok=True)
@@ -217,10 +217,10 @@ council_section = """        item {
                         enabled = !isBusy
                     )
                     Text(
-                        "Nguồn giá hiện tại: CSV do bạn cung cấp. Cần 5.760 nến M15 theo thứ tự thời gian; cho phép nghỉ phiên/cuối tuần, không chèn nến giả. Header: timestamp,open,high,low,close,volume.",
+                        "Nguồn giá hiện tại: CSV do bạn cung cấp. Cần tối thiểu 6.048 nến M15 để có 5.760 nến đầu vào và 3 cửa sổ kiểm định ngoài mẫu × 96 nến; cho phép nghỉ phiên/cuối tuần, không chèn nến giả. Header: timestamp,open,high,low,close,volume.",
                         color = SoftText, fontSize = 11.sp, lineHeight = 16.sp
                     )
-                    Text(marketCsvStatus, color = if (marketBarsCount >= 5760) Mint else Amber, fontSize = 11.sp)
+                    Text(marketCsvStatus, color = if (marketBarsCount >= com.localtrading.council.ai.MarketWalkForwardBacktester.MINIMUM_BARS) Mint else Amber, fontSize = 11.sp)
                     Button(
                         onClick = onImportMarketCsv,
                         enabled = !isBusy,
@@ -243,7 +243,7 @@ council_section = """        item {
                         modifier = Modifier.fillMaxWidth()
                     ) { Text(if (isBusy) "Đang chạy hội đồng AI…" else "Chạy hội đồng AI trên thị trường này") }
                     Text(
-                        "Lần đầu có thể tải ~131 MB Chronos-2, Qwen điều phối và các AI chuyên môn cần thiết. Mỗi GGUF được nạp tuần tự để giảm RAM. Không có lệnh giao dịch tiền thật.",
+                        "Yêu cầu tối thiểu 6.048 nến: 3 cửa sổ kiểm định ngoài mẫu × 96 nến, so sánh Chronos với dự báo giữ nguyên giá cuối. Lần đầu có thể tải ~131 MB Chronos-2 và các mô hình GGUF. Không có lệnh giao dịch tiền thật.",
                         color = SoftText, fontSize = 10.sp, lineHeight = 15.sp
                     )
                 }
