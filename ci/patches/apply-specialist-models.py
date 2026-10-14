@@ -20,8 +20,44 @@ state_new = state_anchor + (
     "    var specialistProgress by remember { mutableStateOf<Int?>(null) }\n"
     "    var downloadingSpecialist by remember { mutableStateOf<com.localtrading.council.data.SpecialistModelId?>(null) }\n"
     "    var activeSpecialist by remember { mutableStateOf<com.localtrading.council.data.SpecialistModelId?>(null) }\n"
+    "    var marketSymbol by remember { mutableStateOf(\"XAUUSD\") }\n"
+    "    var roundTripCostText by remember { mutableStateOf(\"10\") }\n"
+    "    var marketNewsText by remember { mutableStateOf(\"\") }\n"
+    "    var marketBars by remember { mutableStateOf<List<com.localtrading.council.ai.MarketCandle15m>>(emptyList()) }\n"
+    "    var marketCsvStatus by remember { mutableStateOf(\"Chưa có dữ liệu. Hãy chọn CSV OHLCV M15 gồm 5.760 nến liên tục.\") }\n"
+    "    var councilReportText by remember { mutableStateOf(\"\") }\n"
+    "    var councilProgressText by remember { mutableStateOf(\"\") }\n"
+    "    var councilProgress by remember { mutableStateOf<Int?>(null) }\n"
 )
 source = replace_once(source, state_anchor, state_new, "specialist state")
+
+market_picker = """    val marketCsvPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                try {
+                    val csvText = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                            ?: error("Không mở được tệp CSV.")
+                    }
+                    val parsed = com.localtrading.council.ai.MarketCsvParser.parse(csvText)
+                    marketBars = parsed
+                    marketCsvStatus = "Đã nạp " + parsed.size + " nến M15 hợp lệ từ CSV."
+                    councilReportText = ""
+                } catch (e: Exception) {
+                    marketBars = emptyList()
+                    marketCsvStatus = "CSV bị từ chối: " + (e.message ?: "lỗi định dạng")
+                }
+            }
+        }
+    }
+    """
+source = replace_once(
+    source,
+    "    val csvPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->",
+    market_picker + "    val csvPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->",
+    "market CSV picker"
+)
+
 
 activation_callback = """                        onActivateSpecialist = { modelId ->
                             scope.launch {
@@ -69,6 +105,50 @@ activation_callback = """                        onActivateSpecialist = { modelI
                         installedSpecialistIds = com.localtrading.council.data.SpecialistModelId.values()
                             .filter { com.localtrading.council.data.SpecialistModelRepository.installedFile(context, it) != null }
                             .toSet(),
+                        marketSymbol = marketSymbol,
+                        onMarketSymbolChange = { marketSymbol = it },
+                        roundTripCostText = roundTripCostText,
+                        onRoundTripCostChange = { roundTripCostText = it },
+                        marketNewsText = marketNewsText,
+                        onMarketNewsChange = { marketNewsText = it },
+                        marketCsvStatus = marketCsvStatus,
+                        marketBarsCount = marketBars.size,
+                        onImportMarketCsv = { marketCsvPicker.launch(arrayOf("text/csv", "text/*", "application/vnd.ms-excel")) },
+                        councilReportText = councilReportText,
+                        councilProgressText = councilProgressText,
+                        councilProgress = councilProgress,
+                        onRunCouncil = { symbol, costBps, news ->
+                            scope.launch {
+                                isBusy = true
+                                councilProgress = 0
+                                councilProgressText = "Starting council…"
+                                councilReportText = ""
+                                try {
+                                    val report = com.localtrading.council.ai.TradingCouncilEngine.run(
+                                        context = context,
+                                        instrument = symbol,
+                                        candles = marketBars,
+                                        roundTripCostBps = costBps,
+                                        newsText = news,
+                                        onProgress = { stage, progress ->
+                                            scope.launch(Dispatchers.Main) {
+                                                councilProgressText = stage
+                                                councilProgress = progress
+                                            }
+                                        }
+                                    )
+                                    councilReportText = report.toDisplayText()
+                                    toastText = "Hội đồng AI đã hoàn tất phân tích nghiên cứu."
+                                } catch (e: Exception) {
+                                    councilReportText = "Hội đồng chưa thể kết luận: " + (e.message ?: "lỗi mô hình/dữ liệu") +
+                                        "\nKhông có giao dịch nào được thực hiện."
+                                    toastText = "Phân tích chưa hoàn tất."
+                                } finally {
+                                    isBusy = false
+                                    councilProgress = null
+                                }
+                            }
+                        },
 """
 source = replace_once(
     source,
@@ -84,10 +164,96 @@ signature_new = """    onDownloadRecommended: () -> Unit,
     downloadingSpecialist: com.localtrading.council.data.SpecialistModelId?,
     specialistProgress: Int?,
     installedSpecialistIds: Set<com.localtrading.council.data.SpecialistModelId>,
+    marketSymbol: String,
+    onMarketSymbolChange: (String) -> Unit,
+    roundTripCostText: String,
+    onRoundTripCostChange: (String) -> Unit,
+    marketNewsText: String,
+    onMarketNewsChange: (String) -> Unit,
+    marketCsvStatus: String,
+    marketBarsCount: Int,
+    onImportMarketCsv: () -> Unit,
+    councilReportText: String,
+    councilProgressText: String,
+    councilProgress: Int?,
+    onRunCouncil: (String, Double, String) -> Unit,
     onRoleMenu: (Boolean) -> Unit,"""
 source = replace_once(source, signature_anchor, signature_new, "ModelScreen parameters")
 
-specialist_section = """        item {
+council_section = """        item {
+            SectionTitle("Hội đồng AI tìm cơ hội thị trường", "Dự báo chuỗi thời gian + cảm xúc tin tức + toán/rủi ro + chiến lược + phản biện")
+            Card(colors = CardDefaults.cardColors(containerColor = PanelRaised), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    OutlinedTextField(
+                        value = marketSymbol,
+                        onValueChange = onMarketSymbolChange,
+                        label = { Text("Mã thị trường / công cụ") },
+                        placeholder = { Text("XAUUSD, EURUSD, BTCUSDT…") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isBusy
+                    )
+                    OutlinedTextField(
+                        value = roundTripCostText,
+                        onValueChange = onRoundTripCostChange,
+                        label = { Text("Chi phí khứ hồi ước tính (basis points)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isBusy
+                    )
+                    OutlinedTextField(
+                        value = marketNewsText,
+                        onValueChange = onMarketNewsChange,
+                        label = { Text("Tin tức / headline tùy chọn (hiện chưa tự lấy tin live)") },
+                        minLines = 2,
+                        maxLines = 5,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isBusy
+                    )
+                    Text(
+                        "Nguồn giá hiện tại: CSV do bạn cung cấp. Cần 5.760 nến M15 liên tục (60 ngày giao dịch crypto tương đương; không chèn nến giả). Header: timestamp,open,high,low,close,volume.",
+                        color = SoftText, fontSize = 11.sp, lineHeight = 16.sp
+                    )
+                    Text(marketCsvStatus, color = if (marketBarsCount >= 5760) Mint else Amber, fontSize = 11.sp)
+                    Button(
+                        onClick = onImportMarketCsv,
+                        enabled = !isBusy,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Chọn CSV OHLCV M15") }
+                    if (councilProgress != null) {
+                        LinearProgressIndicator(
+                            progress = { (councilProgress ?: 0) / 100f },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(councilProgressText, color = Mint, fontSize = 11.sp)
+                    }
+                    Button(
+                        onClick = {
+                            onRunCouncil(marketSymbol.trim(), roundTripCostText.toDoubleOrNull() ?: -1.0, marketNewsText)
+                        },
+                        enabled = !isBusy && marketSymbol.isNotBlank() &&
+                            roundTripCostText.toDoubleOrNull() != null &&
+                            (roundTripCostText.toDoubleOrNull() ?: -1.0) >= 0.0 && marketBarsCount >= 5760,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (isBusy) "Đang chạy hội đồng AI…" else "Chạy hội đồng AI trên thị trường này") }
+                    Text(
+                        "Lần đầu có thể tải ~131 MB Chronos-2, Qwen điều phối và các AI chuyên môn cần thiết. Mỗi GGUF được nạp tuần tự để giảm RAM. Không có lệnh giao dịch tiền thật.",
+                        color = SoftText, fontSize = 10.sp, lineHeight = 15.sp
+                    )
+                }
+            }
+            if (councilReportText.isNotBlank()) {
+                Card(colors = CardDefaults.cardColors(containerColor = PanelRaised), shape = RoundedCornerShape(18.dp)) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text("Biên bản thảo luận", color = Mint, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(councilReportText, color = Color.White, fontSize = 11.sp, lineHeight = 16.sp)
+                    }
+                }
+            }
+        }
+"""
+specialist_section = council_section + """        item {
             SectionTitle("AI chuyên môn có trọng số thật", "Tải mô hình GGUF thật vào vùng riêng của app; một model chạy tại một thời điểm")
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 com.localtrading.council.data.SpecialistModelId.values().forEach { specialist ->
