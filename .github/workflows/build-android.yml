@@ -1,0 +1,74 @@
+name: Android debug APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-android.yml"
+      - "ci/source-bundle/**"
+      - "README.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-debug-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-debug-apk:
+    name: Build Android debug APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Android SDK packages
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK, NDK and CMake
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;29.0.13113456" \
+            "cmake;3.31.6"
+
+      - name: Reconstruct source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat ci/source-bundle/source-*.b64 | tr -d '\n' | base64 --decode > /tmp/multi-ai-trading-source.tar.gz
+          gzip -t /tmp/multi-ai-trading-source.tar.gz
+          tar -tzf /tmp/multi-ai-trading-source.tar.gz | head -40
+          tar -xzf /tmp/multi-ai-trading-source.tar.gz -C .
+          test -f MultiAITradingAndroid/app/build.gradle.kts
+          chmod +x MultiAITradingAndroid/gradlew
+
+      - name: Build and test
+        shell: bash
+        run: |
+          cd MultiAITradingAndroid
+          ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Verify APK output
+        run: |
+          test -s MultiAITradingAndroid/app/build/outputs/apk/debug/app-debug.apk
+          ls -lh MultiAITradingAndroid/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MultiAITradingCouncil-debug-APK
+          path: MultiAITradingAndroid/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
