@@ -6,6 +6,12 @@ repository_target = root / "data" / "SpecialistModelRepository.kt"
 repository_target.parent.mkdir(parents=True, exist_ok=True)
 repository_target.write_text(repository_source.read_text())
 
+for filename in ("Chronos2MarketForecaster.kt", "TradingCouncilEngine.kt"):
+    source_file = Path("ci/patches") / filename
+    target_file = root / "ai" / filename
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text(source_file.read_text())
+
 activity_path = root / "MainActivity.kt"
 source = activity_path.read_text()
 
