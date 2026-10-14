@@ -51,6 +51,7 @@ data class MarketCandle15m(
     val volume: Double
 )
 data class ForecastHorizon(val steps15m: Int, val medianPrice: Double, val p10Price: Double, val p90Price: Double)
+data class ForecastPathPoint(val step15m: Int, val medianPrice: Double, val p10Price: Double, val p90Price: Double)
 data class MarketForecast(
     val modelName: String,
     val modelRevision: String,
@@ -60,6 +61,7 @@ data class MarketForecast(
     val lastClose: Double,
     val forecastGeneratedAtEpochSeconds: Long,
     val horizons: List<ForecastHorizon>
+    val predictionPath: List<ForecastPathPoint>
 ) {
     fun compactSummary(): String = buildString {
         appendLine("Model: " + modelName + " (" + modelRevision + "), general pretrained time-series foundation model.")
@@ -130,14 +132,14 @@ object MarketCsvParser {
         require(sorted.size >= CONTEXT) {
             "Chronos-2 requires " + CONTEXT + " M15 candles; got " + sorted.size + "."
         }
-        val window = sorted.takeLast(CONTEXT)
-        for (i in 1 until window.size) {
-            val gap = window[i].timestampEpochSeconds - window[i - 1].timestampEpochSeconds
+        require(sorted.size <= 100_000) { "CSV is too large; maximum 100,000 rows." }
+        for (i in 1 until sorted.size) {
+            val gap = sorted[i].timestampEpochSeconds - sorted[i - 1].timestampEpochSeconds
             require(gap >= 900L && gap % 900L == 0L && gap <= 72L * 60L * 60L) {
-                "CSV has an invalid or unexplained time gap (" + gap + " seconds). Keep bars ordered and do not fabricate missing candles."
+                "CSV has an invalid or unexplained time gap (" + gap + " seconds). Keep bars ordered and do not fabricate candles."
             }
         }
-        return window
+        return sorted
     }
     private fun norm(s: String) = s.trim().trim('"', '\'').lowercase(Locale.ROOT)
         .replace("_", "").replace("-", "").replace(" ", "")
@@ -268,14 +270,15 @@ object Chronos2MarketForecaster {
         candles: List<MarketCandle15m>,
         onProgress: (Int) -> Unit = {}
     ): MarketForecast = withContext(Dispatchers.IO) {
-        require(candles.size == CONTEXT) { "Expected " + CONTEXT + " valid M15 candles; got " + candles.size }
+        require(candles.size >= CONTEXT) { "Expected at least " + CONTEXT + " valid M15 candles; got " + candles.size }
         require(instrument.isNotBlank()) { "Specify the market instrument." }
+        val window = candles.takeLast(CONTEXT)
         val file = Chronos2ModelRepository.ensureInstalled(context, onProgress)
         val session = sessionFor(file)
         val env = OrtEnvironment.getEnvironment()
         val inputValues = FloatArray(4 * CONTEXT)
         for (i in 0 until CONTEXT) {
-            val b = candles[i]
+            val b = window[i]
             inputValues[i] = lnPositive(b.close)
             inputValues[CONTEXT + i] = lnPositive(b.high)
             inputValues[2 * CONTEXT + i] = lnPositive(b.low)
@@ -307,29 +310,41 @@ object Chronos2MarketForecaster {
             fb.rewind()
             val raw = FloatArray(fb.remaining()); fb.get(raw)
             val perSeries = raw.size / 4
-            require(perSeries >= quantileLevels.size * HORIZON) {
+            require(raw.size % 4 == 0 && perSeries >= quantileLevels.size * HORIZON) {
                 "Chronos-2 output dimensions do not match 4 series × 21 quantiles × 672 steps."
             }
-            val lastClose = candles.last().close
-            fun horizon(steps: Int): ForecastHorizon {
-                fun priceAt(q: Int): Double {
-                    val value = raw[q * HORIZON + (steps - 1)]
-                    require(value.isFinite() && value in -700f..700f) { "Chronos-2 output is not finite; reject the forecast." }
-                    return exp(value.toDouble())
+            val lastClose = window.last().close
+            fun priceAt(q: Int, step: Int): Double {
+                val index = q * HORIZON + (step - 1)
+                val value = raw[index]
+                require(value.isFinite() && value in -700f..700f) {
+                    "Chronos-2 output is not finite at step " + step + "; reject the forecast."
                 }
-                val p10 = priceAt(2); val p50 = priceAt(10); val p90 = priceAt(18)
-                require(p10 > 0 && p10 <= p50 && p50 <= p90) { "Chronos-2 quantiles are invalid; reject the forecast." }
-                return ForecastHorizon(steps, p50, p10, p90)
+                return exp(value.toDouble())
+            }
+            val path = (1..HORIZON).map { step ->
+                val p10 = priceAt(2, step)
+                val p50 = priceAt(10, step)
+                val p90 = priceAt(18, step)
+                require(p10 > 0.0 && p50 > 0.0 && p90 > 0.0 && p10 <= p50 && p50 <= p90) {
+                    "Chronos-2 quantiles are invalid at step " + step + "; reject the forecast."
+                }
+                ForecastPathPoint(step, p50, p10, p90)
+            }
+            fun horizon(steps: Int): ForecastHorizon {
+                val p = path[steps - 1]
+                return ForecastHorizon(steps, p.medianPrice, p.p10Price, p.p90Price)
             }
             MarketForecast(
                 modelName = Chronos2ModelRepository.MODEL_NAME,
                 modelRevision = Chronos2ModelRepository.MODEL_REVISION,
                 instrument = instrument.trim(),
                 intervalMinutes = 15,
-                observations = candles.size,
+                observations = window.size,
                 lastClose = lastClose,
                 forecastGeneratedAtEpochSeconds = Instant.now().epochSecond,
-                horizons = listOf(horizon(4), horizon(16), horizon(96), horizon(672))
+                horizons = listOf(horizon(4), horizon(16), horizon(96), horizon(672)),
+                predictionPath = path
             )
         } finally {
             output?.close()
