@@ -28,7 +28,7 @@ object CryptoEcosystemResearch {
                 val category = p.optString("category", "").lowercase(Locale.ROOT)
                 val chain = p.optString("chain", p.optJSONArray("chains")?.optString(0).orEmpty())
                 val tvl = p.optDouble("tvl", 0.0)
-                val line = "$name | chain=$chain | TVL_USD=\${"%.0f".format(Locale.US, tvl)} | category=$category"
+                val line = "$name | chain=$chain | TVL_USD=${"%.0f".format(Locale.US, tvl)} | category=$category"
                 when {
                     category.contains("nft") || category.contains("gaming") -> sections["NFT / gaming"]!!.add(line)
                     category.contains("rwa") || category.contains("real world") -> sections["RWA / tokenized assets"]!!.add(line)
@@ -44,7 +44,7 @@ object CryptoEcosystemResearch {
                 .filter { it.optDouble("tvlUsd", 0.0) >= 1_000_000.0 && it.optDouble("apy", -1.0) in 0.0..100.0 }
                 .sortedByDescending { it.optDouble("tvlUsd", 0.0) }.take(12).forEach { p ->
                     sections["DeFi / yield / TVL"]!!.add(
-                        "${p.optString("project")} / ${p.optString("symbol")} | chain=${p.optString("chain")} | TVL_USD=\${"%.0f".format(Locale.US, p.optDouble("tvlUsd"))} | APY=\${"%.2f".format(Locale.US, p.optDouble("apy"))}% | pool=${p.optString("pool")}"
+                        "${p.optString("project")} / ${p.optString("symbol")} | chain=${p.optString("chain")} | TVL_USD=${"%.0f".format(Locale.US, p.optDouble("tvlUsd"))} | APY=${"%.2f".format(Locale.US, p.optDouble("apy"))}% | pool=${p.optString("pool")}"
                     )
                 }
         }
@@ -68,7 +68,7 @@ object CryptoEcosystemResearch {
                     val volume = attrs.optJSONObject("volume_usd")?.optString("h24")?.toDoubleOrNull() ?: 0.0
                     val change = attrs.optJSONObject("price_change_percentage")?.optString("h24")?.toDoubleOrNull() ?: 0.0
                     if (reserve >= 100_000 && volume >= 50_000) sections["DEX / token pools"]!!.add(
-                        "$network | ${attrs.optString("name")} | pool=${attrs.optString("address")} | reserve_USD=\${"%.0f".format(Locale.US, reserve)} | volume24h_USD=\${"%.0f".format(Locale.US, volume)} | change24h_pct=\${"%.2f".format(Locale.US, change)}"
+                        "$network | ${attrs.optString("name")} | pool=${attrs.optString("address")} | reserve_USD=${"%.0f".format(Locale.US, reserve)} | volume24h_USD=${"%.0f".format(Locale.US, volume)} | change24h_pct=${"%.2f".format(Locale.US, change)}"
                     )
                 }
             }
