@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/build-android.yml"
       - "ci/source-bundle/**"
+      - "ci/patches/**"
       - "README.md"
   workflow_dispatch:
 
@@ -96,6 +97,15 @@ jobs:
           PY
           grep 'VERSION=' MultiAITradingAndroid/gradlew
           grep -A1 'private fun run(modelPath' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/ai/OnnxForecastRuntime.kt
+
+      - name: Apply in-app model installation patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch --batch --forward -p1 < ci/patches/model-repository.patch
+          patch --batch --forward -p1 < ci/patches/main-activity-model-screen.patch
+          grep -q 'downloadRecommendedCoordinator' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/data/ModelRepository.kt
+          grep -q 'Mô hình có thể cài' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/MainActivity.kt
 
       - name: Build and test
         shell: bash
