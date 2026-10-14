@@ -12,6 +12,16 @@ Open **Actions → Android debug APK → latest successful run → Artifacts** t
 
 Open **Mô hình** in the APK and tap **Tải và cài Qwen3.5-2B (~1,27 GB)**. The in-app downloader fetches Qwen3.5-2B Q4_K_M GGUF from Hugging Face, resumes a partial transfer when supported, verifies SHA-256, and registers it as the local coordinator model. Wi-Fi and at least 1.5 GB of free storage are recommended. Model source: https://huggingface.co/lmstudio-community/Qwen3.5-2B-GGUF
 
+## Install real specialist AIs
+
+Open **Mô hình** → **AI chuyên môn có trọng số thật**. The app can download, SHA-256-check against the Hugging Face file metadata, install into app-private storage, and load these GGUF weights locally:
+
+- **FinSenti-Qwen3.5-0.8B Q4_K_M** (~529 MB): fine-tuned for financial text sentiment. English-focused; it is not a price-forecasting model. Source: https://huggingface.co/Ayansk11/FinSenti-Qwen3.5-0.8B-GGUF
+- **Qwen2-Math-1.5B-Instruct Q4_K_M** (~918 MB): math/reasoning specialist. Source: https://huggingface.co/tensorblock/Qwen2-Math-1.5B-Instruct-GGUF
+- **Qwen2.5-Coder-1.5B-Instruct Q4_K_M** (~1.12 GB): coding/EA development specialist. Source: https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF
+
+These are genuine pretrained or fine-tuned weights, not hard-coded prediction rules. The APK contains the installer and runtime, not the multi-gigabyte weight files; activate each model from inside the app to download it. The current runtime loads one GGUF model at a time to stay within phone memory limits. A specialist download failing its metadata/hash/size checks is not installed.
+
 ## Current scope and limits
 
 - Native Android UI uses Kotlin and Jetpack Compose.
