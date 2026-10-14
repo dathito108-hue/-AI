@@ -15,6 +15,7 @@ import java.util.Locale
 data class CouncilStage(val agent: String, val model: String, val conclusion: String)
 data class TradingCouncilReport(
     val forecast: MarketForecast,
+    val backtest: WalkForwardBacktestReport,
     val roundTripCostBps: Double,
     val stages: List<CouncilStage>,
     val finalDecision: String
@@ -27,15 +28,18 @@ data class TradingCouncilReport(
         appendLine("1) FORECASTER — " + forecast.modelName)
         appendLine(forecast.compactSummary())
         appendLine()
+        appendLine("2) KIỂM ĐỊNH NGOÀI MẪU — WALK-FORWARD")
+        appendLine(backtest.compactSummary())
+        appendLine()
         stages.forEachIndexed { i, s ->
-            appendLine((i + 2).toString() + ") " + s.agent + " [" + s.model + "]")
+            appendLine((i + 3).toString() + ") " + s.agent + " [" + s.model + "]")
             appendLine(s.conclusion)
             appendLine()
         }
         appendLine("KẾT LUẬN TỔNG HỢP")
         appendLine(finalDecision)
         appendLine()
-        append("Giới hạn: mô hình chuỗi thời gian chưa được fine-tune/backtest trên mã thị trường này. Đây là nghiên cứu ứng viên, không phải khuyến nghị chắc thắng; app chưa gửi lệnh.")
+        append("Giới hạn: Chronos-2 là foundation model tổng quát, chưa được fine-tune trên tài sản này. Bài kiểm định gần đây chỉ có 3 cửa sổ; không chứng minh khả năng sinh lời hay thay cho backtest dài hạn có phí/slippage. App chưa gửi lệnh.")
     }
 }
 
@@ -181,10 +185,20 @@ object TradingCouncilEngine {
         require(roundTripCostBps.isFinite() && roundTripCostBps in 0.0..1000.0) {
             "Round-trip cost must be between 0 and 1000 basis points."
         }
-        val forecast = Chronos2MarketForecaster.forecast(context, instrument, candles) { p ->
+        require(candles.size >= MarketWalkForwardBacktester.MINIMUM_BARS) {
+            "The council requires at least " + MarketWalkForwardBacktester.MINIMUM_BARS +
+                " M15 bars: 5,760 context bars plus three 96-bar out-of-sample windows."
+        }
+        val forecast = Chronos2MarketForecaster.forecast(context, instrument, candles.takeLast(5760)) { p ->
             onProgress("Download / forecast Chronos-2", p)
         }
-        val marketBrief = buildMarketBrief(forecast, roundTripCostBps)
+        onProgress("Run three rolling-origin validation folds", 0)
+        val backtest = MarketWalkForwardBacktester.run(context, instrument, candles) { stage, progress ->
+            onProgress(stage, progress)
+        }
+        val marketBrief = buildMarketBrief(forecast, roundTripCostBps) +
+            "\n\nWALK-FORWARD SCREEN (preliminary, not a profitability proof):\n" +
+            backtest.compactSummary()
 
         onProgress("Prepare coordinator model", 0)
         val coordinator = ModelRepository.modelFile(context, ModelRole.COORDINATOR)?.takeIf { it.isFile }
@@ -269,8 +283,20 @@ object TradingCouncilEngine {
                 "\nSTRATEGY:\n" + strategy + "\nSKEPTIC:\n" + critique,
             420
         )
+        val finalDecision = buildString {
+            if (!backtest.passesPreliminaryGate) {
+                appendLine("HARD NO-TRADE VETO: the recent out-of-sample screen did not beat the naive persistence baseline or did not meet its direction/interval checks.")
+                appendLine("The AI proposals below remain hypotheses only and must not be treated as executable signals.")
+            } else {
+                appendLine("PRELIMINARY SCREEN PASSED ONLY: recent error was below the persistence baseline and the direction/interval checks passed.")
+                appendLine("This small test is not a trading authorization; complete longer walk-forward and fee/slippage-aware paper trading first.")
+            }
+            appendLine()
+            appendLine("AI COUNCIL SYNTHESIS:")
+            append(synthesis)
+        }
         onProgress("Council completed", 100)
-        TradingCouncilReport(forecast, roundTripCostBps, stages, synthesis)
+        TradingCouncilReport(forecast, backtest, roundTripCostBps, stages, finalDecision)
     }
 
     private fun buildMarketBrief(f: MarketForecast, costBps: Double): String = buildString {
@@ -279,7 +305,7 @@ object TradingCouncilEngine {
         appendLine("Last close: " + String.format(Locale.US, "%.8f", f.lastClose))
         appendLine("Assumed total round-trip costs: " + String.format(Locale.US, "%.2f", costBps) + " bps.")
         appendLine("Forecast checkpoint: " + f.modelName + " revision " + f.modelRevision)
-        appendLine("Important limitation: generic pretrained model, not fine-tuned or backtested on this instrument.")
+        appendLine("Important limitation: generic pretrained foundation model, not fine-tuned on this instrument. Read the out-of-sample walk-forward metrics before considering any candidate.")
         appendLine()
         appendLine("MODEL FORECAST QUANTILES (not calibrated probabilities):")
         for (h in f.horizons) {
