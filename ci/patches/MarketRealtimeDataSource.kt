@@ -107,7 +107,8 @@ object MarketRealtimeDataSource : Closeable {
             for (i in 0 until data.length()) {
                 val a = data.optJSONObject(i)?.optJSONObject("attributes") ?: continue
                 val address = a.optString("address"); val name = a.optString("name")
-                val reserve = a.optJSONObject("reserve_in_usd")?.optString("value")?.toDoubleOrNull() ?: 0.0
+                val reserve = a.optString("reserve_in_usd").toDoubleOrNull()
+                    ?: a.optJSONObject("reserve_in_usd")?.optString("value")?.toDoubleOrNull() ?: 0.0
                 val volume = a.optJSONObject("volume_usd")?.optString("h24")?.toDoubleOrNull() ?: 0.0
                 val change = a.optJSONObject("price_change_percentage")?.optString("h24")?.toDoubleOrNull() ?: 0.0
                 val price = a.optString("base_token_price_usd").toDoubleOrNull() ?: 0.0
