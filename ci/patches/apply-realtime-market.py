@@ -39,7 +39,7 @@ state_new = state_anchor + (
     '    var autonomousMarketScope by remember { mutableStateOf("AUTO") }\n'
     '    var twelveDataApiKey by remember { mutableStateOf("") }\n'
     '    var autonomousRunning by remember { mutableStateOf(false) }\n'
-    '    var autonomousStatus by remember { mutableStateOf("Sẵn sàng. AUTO sẽ tự khám phá các cặp Binance spot đủ thanh khoản.") }\n'
+    '    var autonomousStatus by remember { mutableStateOf("Sẵn sàng. AUTO ưu tiên pool DEX đa chuỗi; các mục tiêu được lọc theo dữ liệu công khai.") }\n'
     '    var autonomousQuotes by remember { mutableStateOf<List<com.localtrading.council.ai.LiveMarketQuote>>(emptyList()) }\n'
     '    var autonomousReportText by remember { mutableStateOf("") }\n'
     '    var autonomousJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }\n'
@@ -142,20 +142,19 @@ realtime_section = """        item {
                     OutlinedTextField(
                         value = twelveDataApiKey,
                         onValueChange = onTwelveDataApiKeyChange,
-                        label = { Text("Phạm vi token, chain hoặc pool DEX") },
-                        placeholder = { Text("Có thể để trống") },
+                        label = { Text("Bộ lọc token / chain / địa chỉ pool (không bắt buộc)") },
+                        placeholder = { Text("Ví dụ: solana, Base, WETH hoặc địa chỉ pool") },
                         singleLine = true,
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !autonomousRunning
                     )
                     Text(
-                        "AUTO: tự khám phá pool DEX đa chuỗi theo thanh khoản/biến động; không dùng CEX. " +
-                            "Nhập mã để giới hạn phạm vi. Luồng tự động chỉ nghiên cứu crypto DEX/on-chain; không kết nối tài khoản sàn tập trung.",
+                        "AUTO: tự khám phá pool DEX đa chuỗi theo thanh khoản/biến động; không kết nối CEX. " +
+                            "Nhập từ khóa/chain/địa chỉ pool để lọc phạm vi. Các mảng nghiên cứu gồm DEX, DeFi, airdrop, NFT, RWA và gọi vốn; không kết nối tài khoản sàn tập trung.",
                         color = SoftText, fontSize = 11.sp, lineHeight = 16.sp
                     )
                     Button(
-                        onClick = { onToggleAutonomous(autonomousMarketScope.trim(), twelveDataApiKey.trim()) },
+                        onClick = { onToggleAutonomous(autonomousMarketScope.trim(), "") },
                         enabled = autonomousRunning || autonomousMarketScope.isNotBlank(),
                         modifier = Modifier.fillMaxWidth()
                     ) {
