@@ -74,8 +74,25 @@ object CryptoEcosystemResearch {
                 }
             }
         }
+        val triage = sections.flatMap { (domain, items) ->
+            items.distinct().map { item -> Triage(domain, item, triageScore(domain, item), triageRisks(domain, item)) }
+        }.sortedByDescending { it.score }.take(18)
+
         return buildString {
             appendLine("CRYPTO ECOSYSTEM RESEARCH SNAPSHOT (public read-only data; timestamp=${System.currentTimeMillis()})")
+            appendLine()
+            appendLine("## Opportunity triage (heuristic prioritization, NOT a buy/sell signal)")
+            if (triage.isEmpty()) appendLine("No evidence-backed candidate in this cycle.")
+            triage.forEachIndexed { index, item ->
+                val confidence = when {
+                    item.score >= 65.0 -> "MEDIUM — verify independently"
+                    item.score >= 35.0 -> "LOW — research lead only"
+                    else -> "VERY LOW — insufficient evidence"
+                }
+                appendLine("${index + 1}. ${item.domain} | triage_score=${"%.1f".format(Locale.US, item.score)}/100 | confidence=$confidence")
+                appendLine("   Evidence: ${item.evidence.take(340)}")
+                appendLine("   Risk checklist: ${item.risks}")
+            }
             appendLine("No centralized-exchange account or CEX feed is used by this collector. Missing data means UNKNOWN.")
             sections.forEach { (title, items) ->
                 appendLine()
@@ -89,6 +106,41 @@ object CryptoEcosystemResearch {
         }.takeLast(14000)
     }
 
+    private data class Triage(val domain: String, val evidence: String, val score: Double, val risks: String)
+
+    /** Transparent prescreening only. Missing evidence lowers score; it never invents eligibility or returns. */
+    private fun triageScore(domain: String, item: String): Double {
+        val text = item.lowercase(Locale.ROOT)
+        var score = 18.0
+        if ("tvl_usd=" in text) score += 12.0
+        if ("volume24h_usd=" in text) score += 12.0
+        if ("reserve_usd=" in text) score += 12.0
+        if ("apy=" in text) score += 8.0
+        if ("chain=" in text) score += 5.0
+        if ("pool=" in text) score += 5.0
+        if ("date=" in text) score += 3.0
+        if ("unknown" in text || "verify" in text || "possible incentive" in text) score -= 12.0
+        if ("rwa" in domain.lowercase(Locale.ROOT)) score -= 5.0
+        if ("nft" in domain.lowercase(Locale.ROOT)) score -= 4.0
+        if ("airdrop" in domain.lowercase(Locale.ROOT)) score -= 10.0
+        if ("apy=" in text) {
+            val apy = Regex("""APY=([0-9]+(?:\.[0-9]+)?)%""").find(item)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+            if (apy != null && apy > 30.0) score -= 12.0
+        }
+        return score.coerceIn(0.0, 100.0)
+    }
+
+    private fun triageRisks(domain: String, item: String): String {
+        val lower = (domain + " " + item).lowercase(Locale.ROOT)
+        val risks = mutableListOf<String>()
+        if ("dex" in lower || "pool=" in lower) risks += "pool liquidity, slippage, token contract, pool age"
+        if ("defi" in lower || "apy=" in lower || "tvl" in lower) risks += "smart contract, oracle/bridge, TVL outflow, yield sustainability"
+        if ("airdrop" in lower || "incentive" in lower) risks += "official campaign, eligibility, sybil rules, fees and scam links"
+        if ("nft" in lower || "gaming" in lower) risks += "floor/volume manipulation, concentration, marketplace liquidity"
+        if ("rwa" in lower || "tokeniz" in lower) risks += "issuer, jurisdiction, redemption, custody and transfer restrictions"
+        if ("fundraising" in lower || "amount=" in lower) risks += "announcement recency, source confirmation, unlocks and valuation"
+        return risks.distinct().joinToString("; ").ifBlank { "source freshness and independent verification" }
+    }
     private fun get(url: String): String {
         val request = Request.Builder().url(url).header("Accept", "application/json")
             .header("User-Agent", "MultiAITradingCouncil-Android/0.5").get().build()
