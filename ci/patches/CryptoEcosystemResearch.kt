@@ -20,7 +20,7 @@ object CryptoEcosystemResearch {
             "Fundraising / ecosystem catalysts" to mutableListOf()
         )
         runCatching {
-            val rows = JSONObject(get("https://api.llama.fi/protocols")).optJSONArray("data") ?: JSONArray()
+            val rows = JSONArray(get("https://api.llama.fi/protocols"))
             val ranked = (0 until rows.length()).mapNotNull { rows.optJSONObject(it) }
                 .filter { it.optDouble("tvl", 0.0) > 0.0 }.sortedByDescending { it.optDouble("tvl", 0.0) }.take(180)
             ranked.forEach { p ->
@@ -64,7 +64,8 @@ object CryptoEcosystemResearch {
                 val rows = JSONObject(get("https://api.geckoterminal.com/api/v2/networks/$network/trending_pools")).optJSONArray("data") ?: continue
                 for (i in 0 until minOf(rows.length(), 8)) {
                     val attrs = rows.optJSONObject(i)?.optJSONObject("attributes") ?: continue
-                    val reserve = attrs.optJSONObject("reserve_in_usd")?.optString("value")?.toDoubleOrNull() ?: 0.0
+                    val reserve = attrs.optString("reserve_in_usd").toDoubleOrNull()
+                        ?: attrs.optJSONObject("reserve_in_usd")?.optString("value")?.toDoubleOrNull() ?: 0.0
                     val volume = attrs.optJSONObject("volume_usd")?.optString("h24")?.toDoubleOrNull() ?: 0.0
                     val change = attrs.optJSONObject("price_change_percentage")?.optString("h24")?.toDoubleOrNull() ?: 0.0
                     if (reserve >= 100_000 && volume >= 50_000) sections["DEX / token pools"]!!.add(
