@@ -139,15 +139,6 @@ realtime_section = """        item {
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !autonomousRunning
                     )
-                    OutlinedTextField(
-                        value = twelveDataApiKey,
-                        onValueChange = onTwelveDataApiKeyChange,
-                        label = { Text("Bộ lọc token / chain / địa chỉ pool (không bắt buộc)") },
-                        placeholder = { Text("Ví dụ: solana, Base, WETH hoặc địa chỉ pool") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !autonomousRunning
-                    )
                     Text(
                         "AUTO: tự khám phá pool DEX đa chuỗi theo thanh khoản/biến động; không kết nối CEX. " +
                             "Nhập từ khóa/chain/địa chỉ pool để lọc phạm vi. Các mảng nghiên cứu gồm DEX, DeFi, airdrop, NFT, RWA và gọi vốn; không kết nối tài khoản sàn tập trung.",
