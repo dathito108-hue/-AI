@@ -134,7 +134,7 @@ realtime_section = """        item {
                         value = autonomousMarketScope,
                         onValueChange = onAutonomousMarketScopeChange,
                         label = { Text("Phạm vi thị trường") },
-                        placeholder = { Text("AUTO hoặc BTCUSDT hoặc XAU/USD,EUR/USD") },
+                        placeholder = { Text("AUTO hoặc SOL, Base, WETH hoặc địa chỉ pool") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !autonomousRunning
@@ -142,16 +142,16 @@ realtime_section = """        item {
                     OutlinedTextField(
                         value = twelveDataApiKey,
                         onValueChange = onTwelveDataApiKeyChange,
-                        label = { Text("Twelve Data API key (FX/vàng/cổ phiếu)") },
-                        placeholder = { Text("Để trống nếu chỉ quét crypto công khai") },
+                        label = { Text("Phạm vi token, chain hoặc pool DEX") },
+                        placeholder = { Text("Có thể để trống") },
                         singleLine = true,
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !autonomousRunning
                     )
                     Text(
-                        "AUTO: không cần tệp dữ liệu; app tự khám phá các cặp Binance spot USDT theo thanh khoản/biến động. " +
-                            "Nhập mã để giới hạn phạm vi. Forex, vàng và cổ phiếu dùng Twelve Data API key; key chỉ nằm trong bộ nhớ phiên app, không ghi vào nhật ký.",
+                        "AUTO: tự khám phá pool DEX đa chuỗi theo thanh khoản/biến động; không dùng CEX. " +
+                            "Nhập mã để giới hạn phạm vi. Luồng tự động chỉ nghiên cứu crypto DEX/on-chain; không kết nối tài khoản sàn tập trung.",
                         color = SoftText, fontSize = 11.sp, lineHeight = 16.sp
                     )
                     Button(
