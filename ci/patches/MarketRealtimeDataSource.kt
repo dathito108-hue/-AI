@@ -31,14 +31,16 @@ import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.ln
 
-enum class MarketFeed { BINANCE_SPOT, TWELVE_DATA }
+enum class MarketFeed { DEX_POOL, BINANCE_SPOT, TWELVE_DATA }
 
 data class AutonomousMarketTarget(
     val symbol: String,
     val feed: MarketFeed,
     val quoteVolume24h: Double = 0.0,
     val changePercent24h: Double = 0.0,
-    val discoveryScore: Double = 0.0
+    val discoveryScore: Double = 0.0,
+    val chainId: String = "",
+    val poolAddress: String = ""
 )
 
 data class LiveMarketQuote(
@@ -94,6 +96,57 @@ object MarketRealtimeDataSource : Closeable {
 
     fun currentQuote(symbol: String): LiveMarketQuote? =
         latestQuotes[symbol.uppercase(Locale.ROOT)]?.takeIf { !it.isStale }
+
+    suspend fun discoverDexMarkets(limit: Int = 16): List<AutonomousMarketTarget> = withContext(Dispatchers.IO) {
+        require(limit in 1..40)
+        val pools = LinkedHashMap<String, AutonomousMarketTarget>()
+        for (network in listOf("solana", "base", "eth", "arbitrum", "bsc", "polygon", "optimism", "avax")) {
+            val root = runCatching { JSONObject(getJson("https://api.geckoterminal.com/api/v2/networks/$network/trending_pools")) }.getOrNull() ?: continue
+            val data = root.optJSONArray("data") ?: continue
+            for (i in 0 until data.length()) {
+                val a = data.optJSONObject(i)?.optJSONObject("attributes") ?: continue
+                val address = a.optString("address"); val name = a.optString("name")
+                val reserve = a.optJSONObject("reserve_in_usd")?.optString("value")?.toDoubleOrNull() ?: 0.0
+                val volume = a.optJSONObject("volume_usd")?.optString("h24")?.toDoubleOrNull() ?: 0.0
+                val change = a.optJSONObject("price_change_percentage")?.optString("h24")?.toDoubleOrNull() ?: 0.0
+                val price = a.optString("base_token_price_usd").toDoubleOrNull() ?: 0.0
+                if (address.isBlank() || price <= 0.0 || reserve < 100000.0 || volume < 50000.0) continue
+                val score = ln(1.0 + reserve) * ln(1.0 + volume) * abs(change).coerceIn(0.1, 20.0)
+                pools["$network:$address"] = AutonomousMarketTarget("$network:${name.ifBlank { address.take(10) }}", MarketFeed.DEX_POOL, volume, change, score, network, address)
+            }
+        }
+        pools.values.sortedByDescending { it.discoveryScore }.take(limit)
+    }
+
+    private suspend fun loadDexHistory(target: AutonomousMarketTarget): List<MarketCandle15m> = withContext(Dispatchers.IO) {
+        val all = LinkedHashMap<Long, MarketCandle15m>(); var before = System.currentTimeMillis() / 1000L; var attempts = 0
+        while (all.size < HISTORY_BARS && attempts < 10) {
+            val url = HttpUrl.Builder().scheme("https").host("api.geckoterminal.com")
+                .addPathSegments("api/v2/networks/${target.chainId}/pools/${target.poolAddress}/ohlcv/minute")
+                .addQueryParameter("aggregate", "15").addQueryParameter("limit", PAGE_SIZE.toString())
+                .addQueryParameter("before_timestamp", before.toString()).addQueryParameter("currency", "usd").build()
+            val rows = JSONObject(getJson(url.toString())).optJSONObject("data")?.optJSONObject("attributes")?.optJSONArray("ohlcv_list") ?: break
+            if (rows.length() == 0) break; var oldest: Long? = null
+            for (i in 0 until rows.length()) {
+                val r = rows.optJSONArray(i) ?: continue; if (r.length() < 6) continue
+                val ts = r.optLong(0); val o = r.optDouble(1); val h = r.optDouble(2); val l = r.optDouble(3); val c = r.optDouble(4); val v = r.optDouble(5)
+                if (ts + 900L >= System.currentTimeMillis()/1000L || o <= 0 || l <= 0 || c <= 0 || h < maxOf(o,c,l)) continue
+                all[ts] = MarketCandle15m(ts,o,h,l,c,v); if (oldest == null || ts < oldest) oldest = ts
+            }
+            attempts++; if (oldest == null || rows.length() < PAGE_SIZE) break; before = oldest - 1L
+        }
+        val result = all.values.sortedBy { it.timestampEpochSeconds }.takeLast(HISTORY_BARS)
+        require(result.size >= HISTORY_BARS) { "Pool DEX chỉ có ${result.size}/$HISTORY_BARS nến M15; cần pool có lịch sử đủ dài." }; result
+    }
+
+    private suspend fun fetchDexQuote(target: AutonomousMarketTarget): LiveMarketQuote = withContext(Dispatchers.IO) {
+        val url = "https://api.geckoterminal.com/api/v2/networks/${target.chainId}/pools/${target.poolAddress}"
+        val a = JSONObject(getJson(url)).optJSONObject("data")?.optJSONObject("attributes") ?: error("Không có metadata pool DEX")
+        val price = a.optString("base_token_price_usd").toDoubleOrNull() ?: error("Không có giá DEX")
+        val change = a.optJSONObject("price_change_percentage")?.optString("h24")?.toDoubleOrNull() ?: target.changePercent24h
+        val volume = a.optJSONObject("volume_usd")?.optString("h24")?.toDoubleOrNull() ?: target.quoteVolume24h
+        LiveMarketQuote(target.symbol, MarketFeed.DEX_POOL, price, change, volume, System.currentTimeMillis(), System.currentTimeMillis())
+    }
 
     suspend fun discoverBinanceMarkets(limit: Int = 16): List<AutonomousMarketTarget> =
         withContext(Dispatchers.IO) {
@@ -222,6 +275,7 @@ object MarketRealtimeDataSource : Closeable {
 
     suspend fun loadHistory(target: AutonomousMarketTarget, apiKey: String): List<MarketCandle15m> =
         when (target.feed) {
+            MarketFeed.DEX_POOL -> loadDexHistory(target)
             MarketFeed.BINANCE_SPOT -> loadBinanceHistory(target.symbol)
             MarketFeed.TWELVE_DATA -> loadTwelveHistory(target.symbol, apiKey)
         }
@@ -332,6 +386,7 @@ object MarketRealtimeDataSource : Closeable {
 
     suspend fun fetchLiveQuote(target: AutonomousMarketTarget, apiKey: String): LiveMarketQuote = withContext(Dispatchers.IO) {
         when (target.feed) {
+            MarketFeed.DEX_POOL -> fetchDexQuote(target)
             MarketFeed.BINANCE_SPOT -> {
                 val url = HttpUrl.Builder().scheme("https").host("data-api.binance.vision")
                     .addPathSegments("api/v3/ticker/24hr").addQueryParameter("symbol", target.symbol).build()
@@ -411,50 +466,25 @@ object AutonomousMarketScanner {
         require(manual.size <= 10) { "Nhập tối đa 10 mã trong một phiên quét." }
         try {
             while (currentCoroutineContext().isActive) {
+                val discoveredDex = MarketRealtimeDataSource.discoverDexMarkets(AUTO_UNIVERSE)
                 val candidates: List<AutonomousMarketTarget> = if (auto) {
-                    onStatus("Đang tự khám phá cặp crypto USDT theo thanh khoản và biến động 24h.")
-                    val list = MarketRealtimeDataSource.discoverBinanceMarkets(AUTO_UNIVERSE).toMutableList()
-                    if (twelveDataApiKey.isNotBlank()) list += listOf(
-                        AutonomousMarketTarget("XAU/USD", MarketFeed.TWELVE_DATA),
-                        AutonomousMarketTarget("EUR/USD", MarketFeed.TWELVE_DATA),
-                        AutonomousMarketTarget("AAPL", MarketFeed.TWELVE_DATA)
-                    )
-                    list
-                } else manual.map { symbol ->
-                    val normalized = symbol.trim().uppercase(Locale.ROOT)
-                    if (normalized.matches(Regex("[A-Z0-9]{1,16}USDT"))) {
-                        AutonomousMarketTarget(MarketRealtimeDataSource.normalizeBinanceSymbol(normalized), MarketFeed.BINANCE_SPOT)
-                    } else {
-                        require(twelveDataApiKey.isNotBlank()) {
-                            "Mã '$symbol' cần Twelve Data API key. Crypto USDT trên Binance không cần key."
-                        }
-                        AutonomousMarketTarget(normalized, MarketFeed.TWELVE_DATA)
+                    onStatus("Đang khám phá pool DEX đa chuỗi; không sử dụng sàn CEX.")
+                    discoveredDex
+                } else {
+                    val queries = manual.map { it.trim().lowercase(Locale.ROOT) }
+                    discoveredDex.filter { target -> queries.any { query ->
+                        target.symbol.lowercase(Locale.ROOT).contains(query) ||
+                        target.chainId.lowercase(Locale.ROOT).contains(query) ||
+                        target.poolAddress.equals(query, true)
+                    }}.take(10).also {
+                        require(it.isNotEmpty()) { "Không tìm thấy pool DEX. Thử AUTO, tên token/pair, chain hoặc địa chỉ pool." }
                     }
                 }
                 require(candidates.isNotEmpty()) { "Không tìm thấy thị trường đủ dữ liệu/thanh khoản." }
 
                 MarketRealtimeDataSource.connect(candidates, twelveDataApiKey, onQuote, onStatus)
                 delay(2500L)
-                val selected = if (auto) {
-                    val crypto = candidates.filter { it.feed == MarketFeed.BINANCE_SPOT }
-                        .sortedByDescending { target ->
-                            val q = MarketRealtimeDataSource.currentQuote(target.symbol)
-                            val change = q?.changePercent24h ?: target.changePercent24h
-                            val volume = q?.quoteVolume24h?.takeIf { it > 0.0 } ?: target.quoteVolume24h
-                            ln(1.0 + volume) * abs(change).coerceIn(0.1, 15.0)
-                        }.take(if (twelveDataApiKey.isBlank()) MAX_AUTO_ANALYSES else 2)
-                    val other = candidates.filter { it.feed == MarketFeed.TWELVE_DATA }
-                        .mapNotNull { target ->
-                            val quote = MarketRealtimeDataSource.currentQuote(target.symbol) ?: runCatching {
-                                MarketRealtimeDataSource.fetchLiveQuote(target, twelveDataApiKey)
-                            }.getOrNull()
-                            if (quote == null) null else target.copy(
-                                changePercent24h = quote.changePercent24h,
-                                discoveryScore = abs(quote.changePercent24h) + 0.01
-                            )
-                        }.sortedByDescending { it.discoveryScore }.take(1)
-                    (crypto + other).take(MAX_AUTO_ANALYSES)
-                } else candidates
+                val selected = if (auto) candidates.sortedByDescending { it.discoveryScore }.take(MAX_AUTO_ANALYSES) else candidates
 
                 onStatus("Realtime stream đang mở; AI lần lượt nghiên cứu " + selected.size + " mã. Mục tiêu chu kỳ: 15 phút.")
                 for ((index, target) in selected.withIndex()) {
