@@ -28,6 +28,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runBlocking
 import kotlin.math.abs
 import kotlin.math.ln
 
@@ -185,6 +186,18 @@ object MarketRealtimeDataSource : Closeable {
         val twelve = targets.filter { it.feed == MarketFeed.TWELVE_DATA }.map { it.symbol }.distinct()
         if (binance.isNotEmpty()) connectBinance(binance)
         if (twelve.isNotEmpty() && apiKey.isNotBlank()) connectTwelveData(twelve, apiKey)
+        val dexTargets = targets.filter { it.feed == MarketFeed.DEX_POOL }
+        if (dexTargets.isNotEmpty()) {
+            heartbeat?.cancel(false)
+            heartbeat = heartbeatExecutor.scheduleAtFixedRate({
+                if (!stopped) dexTargets.forEach { target ->
+                    runCatching { runBlocking { fetchDexQuote(target) } }
+                        .onSuccess { quote -> publish(quote) }
+                        .onFailure { statusCallback?.invoke("DEX quote tạm lỗi cho " + target.symbol + "; sẽ thử lại.") }
+                }
+            }, 0L, 15L, TimeUnit.SECONDS)
+            statusCallback?.invoke("Đang theo dõi giá DEX qua polling công khai mỗi 15 giây cho " + dexTargets.size + " pool.")
+        }
     }
 
     private fun connectBinance(symbols: List<String>) {
