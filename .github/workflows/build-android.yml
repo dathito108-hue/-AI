@@ -114,6 +114,7 @@ jobs:
           grep -q 'DEX quote' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/ai/MarketRealtimeDataSource.kt
           grep -q 'Tự tìm cơ hội thị trường' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/MainActivity.kt
           grep -q 'CryptoEcosystemResearch' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/ai/CryptoEcosystemResearch.kt
+          grep -q 'Opportunity triage' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/ai/CryptoEcosystemResearch.kt
 
       - name: Build and test
         shell: bash
