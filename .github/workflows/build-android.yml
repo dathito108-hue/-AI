@@ -111,7 +111,7 @@ jobs:
           grep -q 'AI chuyên môn có trọng số thật' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/MainActivity.kt
           python3 ci/patches/apply-realtime-market.py
           grep -q 'com.squareup.okhttp3:okhttp:4.12.0' MultiAITradingAndroid/app/build.gradle.kts
-          grep -q 'Binance spot stream' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/ai/MarketRealtimeDataSource.kt
+          grep -q 'DEX quote' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/ai/MarketRealtimeDataSource.kt
           grep -q 'Tự tìm cơ hội thị trường' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/MainActivity.kt
           grep -q 'CryptoEcosystemResearch' MultiAITradingAndroid/app/src/main/java/com/localtrading/council/ai/CryptoEcosystemResearch.kt
 
